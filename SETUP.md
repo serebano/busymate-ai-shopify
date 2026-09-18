@@ -69,19 +69,19 @@ crash) and the admin shows a retry button.
 
 ## 3b. Host deploy runbook (production build + migrations)
 
-The host (`busymate-v2-lon1`, dir `/opt/bmai-shopify-app`, owner `deploy`, systemd
-`bmai-shopify-app` → `react-router-serve` on 127.0.0.1:3970, env file
-`/etc/bmai-shopify-app/env`) runs a git clone of `origin`. Every deploy is:
+The host (`busymate-v2-lon1`, dir `/opt/busymate-ai-shopify`, owner `deploy`, systemd
+`busymate-ai-shopify` → `react-router-serve` on 127.0.0.1:3970, env file
+`/etc/busymate-ai-shopify/env`) runs a git clone of `origin`. Every deploy is:
 
 ```bash
-cd /opt/bmai-shopify-app
-sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app fetch origin
-sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app checkout <shipped sha>
+cd /opt/busymate-ai-shopify
+sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify fetch origin
+sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify checkout <shipped sha>
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
 sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training); reads DATABASE_URL from the deploy-owned .env
 sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
-systemctl restart bmai-shopify-app
+systemctl restart busymate-ai-shopify
 curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
 ```
 
@@ -118,9 +118,9 @@ never echo a value:
 ```bash
 # The env file is root-owned 0600 (deploy cannot read it): source it as root and
 # hand it to `deploy` through the ENVIRONMENT (sudo -E), never argv or a copy.
-cd /opt/bmai-shopify-app
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle -- --dry-run'   # lists candidate shops
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle'                # exchanges + stores
+cd /opt/busymate-ai-shopify
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; sudo -E -H -u deploy npm run tokens:cycle -- --dry-run'   # lists candidate shops
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; sudo -E -H -u deploy npm run tokens:cycle'                # exchanges + stores
 ```
 
 Done on the host 2026-09-02 (build `0447ff3`): 2 scanned, 2 cycled, 0 failed — both
@@ -159,7 +159,7 @@ Re-train from the shell (same path as the merchant's button — e.g. after a pla
 change that needs every trained tenant re-projected):
 
 ```bash
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; cd /opt/bmai-shopify-app && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
 ```
 
 ## 3d. App Proxy (storefront identity) 🔒
@@ -350,7 +350,7 @@ Metering trigger (systemd timer on the host; the secret is read from the env fil
 # /etc/systemd/system/bmai-shopify-meter.service
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/bmai-shopify-app/env
+EnvironmentFile=/etc/busymate-ai-shopify/env
 ExecStart=/bin/sh -c 'curl -fsS -X POST -H "x-billing-meter-secret: $$BILLING_METER_SECRET" http://127.0.0.1:3970/api/billing/meter'
 # /etc/systemd/system/bmai-shopify-meter.timer  →  OnCalendar=hourly
 ```
