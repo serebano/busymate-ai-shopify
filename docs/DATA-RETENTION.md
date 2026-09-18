@@ -27,7 +27,7 @@ and is reached only via MCP.
 Credential + PII columns are encrypted with **AES‑256‑GCM** (`app/lib/fieldCipher.ts`):
 
 - Key: `APP_ENCRYPTION_KEY` — a 32‑byte key (base64 or hex), held only in the app
-  host's secret env (`/etc/bmai-shopify-app/env`, mode 0600). Value‑blind: never
+  host's secret env (`/etc/busymate-ai-shopify/env`, mode 0600). Value‑blind: never
   logged.
 - Envelope: `enc:v1:<base64(iv | tag | ciphertext)>`. GCM authentication means a
   tampered value fails to decrypt rather than returning a wrong plaintext.
