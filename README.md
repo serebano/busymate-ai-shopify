@@ -8,7 +8,7 @@ platform to Busymate AI.** Fork it, extend it, ship your own.
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 Installing this app turns any Shopify store into **one [Busymate AI](https://busymate.ai)
-white-label tenant** — an AI support assistant (**bro**): answers only from the store's
+white-label tenant** — an AI support assistant (**your mate**): answers only from the store's
 own products, policies and content, with sources, and says when it is not sure ·
 signed-in shoppers get order status, tracking and confirm-gated order actions ·
 replies in the shopper's language (RTL included) · confidence-gated human handoff.
@@ -33,9 +33,9 @@ six steps; everything platform-specific is isolated behind them:
 |---|------|--------------|--------------|
 | **a** | **Provision a tenant** | Create one Busymate AI tenant per platform account, gated by **proof-of-origin** (no shared operator secret) | `provision_partner_tenant` (MCP) |
 | **b** | **Brand + serve + publish** | Set the tenant's branding, allow the storefront origins to embed it, and publish the runtime projection so it goes live at `<slug>.busymate.ai` | `set_tenant_branding`, `add_tenant_embed_origin`, `publish_tenant_runtime` (MCP) |
-| **c** | **Register a support connector** | Expose your platform's own tools (orders, refunds, returns…) so **bro** can act, gated by tier + confirm + spend cap | `upsert_tenant_support_connector` (MCP) + your `/mcp` endpoint |
+| **c** | **Register a support connector** | Expose your platform's own tools (orders, refunds, returns…) so **your mate** can act, gated by tier + confirm + spend cap | `upsert_tenant_support_connector` (MCP) + your `/mcp` endpoint |
 | **d** | **Embed the chat widget** | Drop the white-label widget onto your surface (`iframe`, `allow=microphone`) — no core template edit | `<script src=".../embed/v1.js" data-assistant="<slug>">` |
-| **e** | **Identified launch** | Prove _who_ the visitor is (a signed ES256 JWT) so bro scopes answers/actions to that account | `/.well-known/jwks.json` + a launch JWT registered as the tenant's visitor IdP |
+| **e** | **Identified launch** | Prove _who_ the visitor is (a signed ES256 JWT) so your mate scopes answers/actions to that account | `/.well-known/jwks.json` + a launch JWT registered as the tenant's visitor IdP |
 | **f** | **Compliance seams** | Data export / erase / teardown on the platform's lifecycle + privacy events | `export_tenant_customer_data`, `redact_tenant_customer`, `suspend_tenant`, `delete_tenant` (MCP) |
 
 The single hard invariant: **all-ops-via-MCP.** One module (`app/bmai.server.ts`) is the
@@ -80,7 +80,7 @@ flowchart TB
   subgraph BMAI["Busymate AI (multi-tenant platform — reuse)"]
     TEN["tenant + embed-origin allowlist"]
     PUB["publish_tenant_runtime → projection"]
-    ASSIST["bro (resolves tenant by host)"]
+    ASSIST["your mate (resolves tenant by host)"]
     EMBED["/embed/v1.js @ slug.busymate.ai"]
     USAGE["usage ledger (internal)"]
   end
@@ -148,7 +148,8 @@ platform ports** built on the pattern above. Please read:
   public issue for security).
 
 Every change ships a test (`test/**`, `npm test`), and merchant-facing copy must say
-**"Busymate AI"** / **"bro"** — enforced by `test/naming.test.ts`.
+**"Busymate AI"** / **"your mate"**, never the retired codenames "bro"/"eve"/"bmai" —
+enforced by `test/naming.test.ts`.
 
 ## Status & production notes
 

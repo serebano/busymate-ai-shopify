@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 /**
  * PUBLIC-NAMING ENFORCEMENT (HARD owner rule).
  *
- * Merchant- and customer-facing copy must say "Busymate AI" and "bro" — NEVER the
- * internal codenames "bmai" or "eve". Internal architecture is documented with the
- * codenames in CODE COMMENTS (allowed); this test scans only the surfaces a
- * merchant or shopper actually reads:
+ * Merchant- and customer-facing copy must say "Busymate AI" and "your mate" — NEVER
+ * the retired/internal codenames "bro", "eve" or "bmai" (owner order 2026-09-07,
+ * busymate-devtools#2585: "bro" is retired in favour of the ordinary noun "your
+ * mate"). Internal architecture is documented with the codenames in CODE COMMENTS
+ * (allowed); this test scans only the surfaces a merchant or shopper actually reads:
  *   - the App Store listing copy (listing/**.json)
  *   - the storefront extension locales (extensions/**\/locales/*.json)
  *   - the extension's Theme-editor schema strings (blocks/*.liquid, comments stripped)
