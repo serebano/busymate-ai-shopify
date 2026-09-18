@@ -44,6 +44,9 @@ NEW_NAME="busymate-ai-shopify"
 mkdir -p "$OPT_ROOT/$OLD_NAME" "$ETC_ROOT/$OLD_NAME" "$UNIT_DIR" "$TMP/bin" "$TMP/repo/deploy/systemd"
 echo 'placeholder app files' > "$OPT_ROOT/$OLD_NAME/marker.txt"
 echo 'DATABASE_URL=postgres://x' > "$ETC_ROOT/$OLD_NAME/env"
+# A pre-migration host has the OLD unit installed — that is what makes a
+# rollback possible at all. Its absence is covered by its own case below.
+printf '[Unit]\nDescription=old test unit\n' > "$UNIT_DIR/${OLD_NAME}.service"
 # A minimal real-looking unit file so migrate-rename.sh has something to install.
 cat > "$TMP/repo/deploy/systemd/${NEW_NAME}.service" <<EOF
 [Unit]
@@ -64,6 +67,15 @@ STATE_FILE="$TMP/systemctl-state"
 cat > "$TMP/bin/systemctl" <<STUB
 #!/usr/bin/env bash
 echo "\$*" >> "${STATE_FILE}"
+# Faithful on the one point that matters: starting a unit whose file does not
+# exist FAILS, exactly as systemd does ("Unit not found", exit 5). An
+# always-zero stub made the rollback assertions vacuous and hid a real hazard —
+# a rollback to an already-removed old unit stopped the live service and then
+# aborted under \`set -e\`, leaving it down.
+if [ "\${1:-}" = "start" ] && [ -n "\${2:-}" ] && [ ! -f "${UNIT_DIR}/\${2}" ]; then
+  echo "Failed to start \${2}: Unit \${2} not found." >&2
+  exit 5
+fi
 exit 0
 STUB
 chmod +x "$TMP/bin/systemctl"
@@ -126,5 +138,37 @@ fi
 grep -qi "auto-rolling back" "$TMP/apply3.out" || fail "unhealthy apply did not trigger auto-rollback"
 grep -q "enable ${OLD_NAME}.service" "$STATE_FILE" || fail "auto-rollback did not re-enable the old unit"
 pass "unhealthy apply auto-rolls-back within HEALTH_TIMEOUT"
+
+# --- a host with NO old unit must never be taken down by a "rollback" ---
+# The real case (busymate-v2-lon1, 2026-09-18): the migration had already been
+# completed out of band, so bmai-shopify-app.service no longer existed. With an
+# always-zero systemctl stub this path looked green; against real systemd the
+# rollback stopped the healthy new unit and then died on `start <missing old>`.
+rm -rf "$OPT_ROOT" "$ETC_ROOT"
+mkdir -p "$OPT_ROOT/$NEW_NAME" "$ETC_ROOT/$NEW_NAME"
+echo 'placeholder' > "$OPT_ROOT/$NEW_NAME/marker.txt"
+echo 'DATABASE_URL=x' > "$ETC_ROOT/$NEW_NAME/env"
+rm -f "$UNIT_DIR/${OLD_NAME}.service"          # already-migrated host
+: > "$STATE_FILE"
+if "$MIGRATE" --apply > "$TMP/apply4.out" 2>&1; then
+  fail "--apply with a failing health check should exit non-zero"
+fi
+grep -qi "CANNOT ROLL BACK" "$TMP/apply4.out" \
+  || { cat "$TMP/apply4.out" >&2; fail "missing old unit did not produce a refusal"; }
+grep -q "stop ${NEW_NAME}.service" "$STATE_FILE" \
+  && { cat "$TMP/apply4.out" >&2; fail "refused rollback STOPPED the new unit — it must be left running"; }
+grep -q "start ${OLD_NAME}.service" "$STATE_FILE" \
+  && fail "refused rollback still tried to start the missing old unit"
+pass "no old unit => rollback refuses and leaves the new unit running"
+
+# --- explicit --rollback on such a host refuses too, without stopping anything ---
+: > "$STATE_FILE"
+if "$MIGRATE" --rollback > "$TMP/rollback2.out" 2>&1; then
+  fail "--rollback with no old unit should exit non-zero"
+fi
+grep -qi "CANNOT ROLL BACK" "$TMP/rollback2.out" || fail "--rollback gave no refusal message"
+grep -q "stop ${NEW_NAME}.service" "$STATE_FILE" \
+  && fail "--rollback stopped the new unit with nothing to roll back to"
+pass "explicit --rollback with no old unit refuses safely"
 
 echo "ALL OK"

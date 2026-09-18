@@ -175,6 +175,19 @@ health_check() {
 }
 
 rollback_to_old_unit() {
+  # A rollback is only possible while the OLD unit file still exists. On a host
+  # that has already completed the migration — or was provisioned fresh under
+  # the new name — it is gone, and the first version of this function stopped
+  # the NEW unit and then died on the unguarded `systemctl start <old>` under
+  # `set -euo pipefail`: the service went down and nothing brought it back.
+  # A rollback target that does not exist is not a rollback, so refuse loudly
+  # and leave the running service untouched.
+  if [ ! -f "$OLD_UNIT" ]; then
+    echo "[migrate-rename] CANNOT ROLL BACK: $OLD_UNIT does not exist." >&2
+    echo "[migrate-rename] Leaving ${NEW_NAME}.service exactly as it is — NOT stopping it." >&2
+    echo "[migrate-rename] This host has no old unit to return to; investigate by hand." >&2
+    return 1
+  fi
   log "rolling back to ${OLD_NAME}.service"
   systemctl stop "${NEW_NAME}.service" 2>/dev/null || true
   systemctl disable "${NEW_NAME}.service" 2>/dev/null || true
@@ -206,7 +219,9 @@ main() {
   log "old name: ${OLD_NAME}  new name: ${NEW_NAME}"
 
   if [ "$MODE" = "rollback" ]; then
-    rollback_to_old_unit
+    if ! rollback_to_old_unit; then
+      exit 1
+    fi
     log "rollback complete"
     exit 0
   fi
@@ -230,8 +245,11 @@ main() {
 
   if ! health_check; then
     echo "[migrate-rename] UNHEALTHY after ${HEALTH_TIMEOUT}s — auto-rolling back" >&2
-    rollback_to_old_unit
-    echo "[migrate-rename] rolled back to ${OLD_NAME}.service — migration FAILED" >&2
+    if rollback_to_old_unit; then
+      echo "[migrate-rename] rolled back to ${OLD_NAME}.service — migration FAILED" >&2
+    else
+      echo "[migrate-rename] migration FAILED and could NOT be rolled back automatically" >&2
+    fi
     exit 1
   fi
 
