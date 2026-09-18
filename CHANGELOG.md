@@ -4,7 +4,7 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
-## 2026-09-13 — 0.1.11: zero-usage display + quiet skip for a deprovisioned tenant (#19, devtools #2835)
+## 2026-09-13 — 0.1.11: zero-usage display + quiet skip for a deprovisioned tenant (#19)
 
 Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):
 
@@ -30,7 +30,7 @@ Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):
 
 597 tests across 64 suites; typecheck, lint and production build green.
 
-## 2026-09-13 — 0.1.10: single-flight token refresh (incident fix, #19, devtools #2835)
+## 2026-09-13 — 0.1.10: single-flight token refresh (incident fix, #19)
 
 - **Incident:** two concurrent MCP calls on a cold token cache each refreshed the
   shared `mgmt` OAuth credential; the edge read the second POST of the same
@@ -42,7 +42,7 @@ Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):
   conversations then handoffs sequentially. Regression tests added. Full write-up:
   `docs/BILLING.md` → "Incident 2026-09-13".
 
-## 2026-09-13 — 0.1.9: the AI-resolution metering counter (#19, devtools #2835)
+## 2026-09-13 — 0.1.9: the AI-resolution metering counter (#19)
 
 - The last review gap: `usageBilling.ts` read `get_tenant_usage`, which returns
   tenant entity counts, not a resolutions/cursor pair — usage was permanently
@@ -150,8 +150,8 @@ Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):
 
 ## 2026-09-02 — fix(#2132 C+D): branding save re-publishes the runtime; honest "No plan selected" billing state · `dc2e004` (PR #9) · host `store.busymate.ai` build 18:38Z
 
-Found by the busymate-devtools#2110 reviewer simulation on the fresh dev store
-`busymate-ai-review-test-5` (busymate-devtools#2132).
+Found by the reviewer simulation on the fresh dev store
+`busymate-ai-review-test-5`.
 
 - **FAIL C — assistant rename not reflected in the widget.** Root cause: the settings save
   called only `set_tenant_branding` (the tenant ROW), but the storefront widget renders the
@@ -177,7 +177,7 @@ Found by the busymate-devtools#2110 reviewer simulation on the fresh dev store
 
 ## 2026-09-02 — fix: embedded actions fail closed on the client (the REAL Re-train 500) · host `store.busymate.ai`
 
-Follow-up to the hydration fix below (busymate-devtools#2110). Traced live in the admin iframe
+Follow-up to the hydration fix below. Traced live in the admin iframe
 with a CDP network/console trace on the fixed build: the "500 Something went wrong" after
 **Re-train on my store** was NOT the hydration mismatch (that was real, and is gone — no React
 #418/#425/#423 at load any more) but a **failed action fetch**.
@@ -206,7 +206,7 @@ with a CDP network/console trace on the fixed build: the "500 Something went wro
 ## 2026-09-02 — fix: Connector 500 on Re-train (hydration mismatch) · host `store.busymate.ai`
 
 Fixes a client-side "Something went wrong" 500 seen live when clicking **Re-train on my
-store** (busymate-devtools#2110). No code released a new Shopify version — server + client
+store**. No code released a new Shopify version — server + client
 code only.
 
 - **Root cause** — a React **hydration mismatch**. Merchant timestamps were rendered during
@@ -230,7 +230,7 @@ code only.
 
 ## 2026-09-02 — main `0447ff3` → `ed2c9cc` → this · Shopify version **busymate-ai-5** · host `store.busymate.ai`
 
-App Store resubmission for busymate-devtools#2110 (review reference 132497).
+App Store resubmission (review reference 132497).
 
 - **Billing (1.2.1)** — Shopify App Pricing is the only billing path: plan catalog ==
   `listing/pricing.json`, plan state from the Partner API `activeSubscription` +

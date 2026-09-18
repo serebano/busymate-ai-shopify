@@ -25,6 +25,7 @@
  * safe.
  *
  */
+import { DEFAULT_ASSISTANT_NAME } from "./assistantName";
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
 import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderRegistration } from "./mgmtArgs";
@@ -231,7 +232,7 @@ export async function runProvisionLifecycle(
   //    below re-reads the tenant row, so an existing tenant keeps its branding.
   const isNewTenant = provisioned.data?.created === true || (!existing?.bmaiTenantId && provisioned.data?.reactivated !== true);
   if (isNewTenant) {
-    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: "bro" }));
+    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: DEFAULT_ASSISTANT_NAME }));
   }
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).

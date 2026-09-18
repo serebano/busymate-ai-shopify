@@ -173,7 +173,7 @@ export default function Index() {
                   </InlineStack>
                 </InlineGrid>
                 <Text as="p" tone="subdued">
-                  Busymate AI adds <strong>bro</strong>, your store&apos;s own assistant, to your storefront. It answers
+                  Busymate AI adds <strong>your mate</strong>, your store&apos;s own assistant, to your storefront. It answers
                   only from your products, pages and policies, in your shoppers&apos; languages, and takes order actions
                   only with confirmation.
                 </Text>

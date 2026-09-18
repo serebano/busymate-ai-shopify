@@ -1,5 +1,5 @@
 ACCESS / REQUIREMENT 4.5.4
-No separate Busymate AI account, password, SSO or two-factor login exists or is required: Shopify authenticates the embedded app, and shoppers use your test store's native customer sign-in. There are no credentials to provide. Support: mr.serebano@gmail.com
+No separate Busymate AI account, password, SSO or two-factor login exists or is required: Shopify authenticates the embedded app, and shoppers use your test store's native customer sign-in. There are no credentials to provide. Support: hi@busymate.ai
 
 FIXES SINCE REVIEW 132497 (2026-09-11), live as app version 0.1.8 on 2026-09-13:
 - 5.1.2: "Turn on the storefront assistant" opens the theme editor on the "Busymate AI assistant" app embed (no "App embed does not exist"); the widget renders in the Theme Editor preview and on the Online Store.
@@ -14,4 +14,4 @@ FIXES SINCE REVIEW 132497 (2026-09-11), live as app version 0.1.8 on 2026-09-13:
 7. Guests can ask product/policy questions without login. For order tests, create a test customer and order and use the store's customer sign-in. The assistant never discloses another customer's orders and asks for confirmation before any order-changing action.
 8. Ask for a person to test the human handoff. Uninstall and reinstall the app; Home opens and the assistant is restored.
 
-Support: mr.serebano@gmail.com
+Support: hi@busymate.ai
