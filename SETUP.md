@@ -24,7 +24,7 @@ account and credentials only you can create. This file is the exact checklist to
   handlers wired to MCP effects; HMAC verified by `authenticate.webhook`; a shop
   with no tenant is a 200 no-op ("nothing held"), a real MCP failure still 500s.
 - **Billing** — Managed-Pricing check + redirect; widget never disabled at cap.
-- **Public naming** — merchant copy says "Busymate AI" / "bro"; enforced by
+- **Public naming** — merchant copy says "Busymate AI" / "your mate"; enforced by
   `test/naming.test.ts`.
 
 ---

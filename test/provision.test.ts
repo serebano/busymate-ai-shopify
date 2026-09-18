@@ -565,7 +565,7 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect((await runProvisionLifecycle(session, again.deps)).calls).not.toContain("set_tenant_branding");
   });
 
-  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'bro')", async () => {
+  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'your mate')", async () => {
     const seen: Record<string, Record<string, unknown>> = {};
     const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       seen[name] = args ?? {};
@@ -575,7 +575,7 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
     const out = await runProvisionLifecycle(session, deps);
     expect(out.calls).toContain("set_tenant_branding");
-    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "bro" }, confirm: true });
+    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "your mate" }, confirm: true });
   });
 
   it("without a buildKnowledge dep (ops verify script) the lifecycle publishes with no knowledge and records no training", async () => {

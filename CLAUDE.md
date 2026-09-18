@@ -1,7 +1,7 @@
 # Repo guide — busymate-ai-shopify
 
 **Busymate AI for Shopify** — the official Shopify App Store app whose AI backend is the
-Busymate AI white-label agent (**bro**). Installing it turns a Shopify store into **one
+Busymate AI white-label agent (**your mate**). Installing it turns a Shopify store into **one
 Busymate AI tenant**. This is a **client** of the Busymate AI + Shopify plumbing, not a
 new AI stack. It is also an **open reference** for connecting any platform to Busymate AI
 (see [`docs/EXTENDING.md`](docs/EXTENDING.md)).
@@ -75,7 +75,7 @@ CHECKLIST.md                Built-for-Shopify compliance status
   products/policies/pages into ≤40 sources, ≤20,000 chars each, ≤40,000 total (policies →
   products → pages, whole items, "+N more" note). Training state lives on `ShopTenant.kb*`
   and is shown on Home / Store connection; ingest errors are persisted, never swallowed.
-- **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"bro"**,
+- **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"your mate"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
 - **Embedded-frame contract** — nothing may paint the root "500" document inside the admin
   iframe. Every `app/routes/app.*.tsx` child route exports `ErrorBoundary = AppRouteBoundary`
