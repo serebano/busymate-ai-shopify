@@ -15,7 +15,7 @@ welcome.
 ## Setup
 
 ```bash
-git clone <your-fork-url> && cd bmai-shopify-app
+git clone <your-fork-url> && cd busymate-ai-shopify
 cp .env.example .env         # every var documents where it comes from
 npm install
 npx prisma generate

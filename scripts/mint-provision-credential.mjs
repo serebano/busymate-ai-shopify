@@ -50,7 +50,7 @@ async function main() {
 
   // 1) Create-or-reuse the dedicated provisioner user (least privilege — no role).
   let userId = "";
-  let r = await fetch(`${URL_}/auth/v1/admin/users`, { method: "POST", headers: adminH, body: JSON.stringify({ email: EMAIL, password, email_confirm: true, user_metadata: { purpose: "bmai-shopify-provisioner", ref: "bmai-shopify-app" } }) });
+  let r = await fetch(`${URL_}/auth/v1/admin/users`, { method: "POST", headers: adminH, body: JSON.stringify({ email: EMAIL, password, email_confirm: true, user_metadata: { purpose: "bmai-shopify-provisioner", ref: "busymate-ai-shopify" } }) });
   if (r.ok) userId = (await j(r)).id;
   else {
     for (let p = 1; p <= 20 && !userId; p++) {

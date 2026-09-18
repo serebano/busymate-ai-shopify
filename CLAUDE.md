@@ -1,4 +1,4 @@
-# Repo guide — bmai-shopify-app
+# Repo guide — busymate-ai-shopify
 
 **Busymate AI for Shopify** — the official Shopify App Store app whose AI backend is the
 Busymate AI white-label agent (**bro**). Installing it turns a Shopify store into **one
