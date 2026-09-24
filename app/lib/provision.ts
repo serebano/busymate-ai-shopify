@@ -31,6 +31,7 @@ import { proofArgs, type PartnerProof } from "./partnerProof";
 import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderRegistration } from "./mgmtArgs";
 import type { KnowledgeBuild, KnowledgeCounts } from "./kbSnapshot";
 import { isKnowledgeRejection, publishOptionsFor, trainingPatch, type TrainingPatch } from "./kbTrain";
+import { formatStoredDomains, parseStoredDomains } from "./storefrontDomains";
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -56,6 +57,8 @@ export interface TenantRecord {
 
 export type TenantPatch = {
   slug?: string;
+  /** The store's storefront domains, comma-separated (#3718). */
+  customDomain?: string | null;
   bmaiTenantId?: string | null;
   connectorId?: string | null;
   identityProviderId?: string | null;
@@ -70,13 +73,19 @@ export type TenantPatch = {
   publishedAt?: Date | null;
 } & Partial<TrainingPatch>;
 
-/** The runtime origins every publish carries (install AND re-train use the same). */
+/**
+ * The runtime origins every publish carries (install AND re-train use the same).
+ * `customDomain` is the stored column: one host or a comma-separated list of the
+ * store's real storefront domains (#3718 — app/lib/storefrontDomains.ts).
+ */
 export function runtimeOrigins(shop: string, slug: string, customDomain?: string | null): { launchOrigins: string[]; embedOrigins: string[] } {
   return {
     launchOrigins: [servingHost(slug)],
     // CSP frame-ancestors checks EVERY ancestor. Theme preview nests the store
     // inside Shopify's editor iframe and admin; allow those exact hosts, never *.
-    embedOrigins: [`https://${shop}`, ...(customDomain ? [`https://${customDomain}`] : []),
+    // The store's own custom domains follow its myshopify origin so a shopper on
+    // `https://www.<brand>.com` is never refused (#3718).
+    embedOrigins: [`https://${shop}`, ...parseStoredDomains(customDomain).map((host) => `https://${host}`),
       "https://admin.shopify.com", "https://online-store-web.shopifyapps.com"],
   };
 }
@@ -123,6 +132,12 @@ export interface ProvisionDeps {
    * green-while-dead) and shoppers stay anonymous with public tools only.
    */
   launchIdentity?: IdentityProviderRegistration | null;
+  /**
+   * The store's real storefront domains (primary + others) from the Admin API
+   * (#3718 — app/lib/storefrontDomains.ts). Optional (the ops verify script has
+   * no shop session) and SOFT: a failure keeps the previously stored domains.
+   */
+  storefrontHosts?: (shop: string) => Promise<string[]>;
 }
 
 export interface TrainingSummary {
@@ -220,8 +235,20 @@ export async function runProvisionLifecycle(
   // re-projection) and says so. The publish below re-takes it live either way.
   const reactivated = provisioned.data?.reactivated === true;
 
+  // #3718 — the store's REAL storefront domains (a custom domain is where most
+  // shoppers are). Soft: a failed read keeps what was stored before.
+  let customDomain = existing?.customDomain ?? null;
+  if (deps.storefrontHosts) {
+    try {
+      const hosts = await deps.storefrontHosts(shop);
+      customDomain = formatStoredDomains([...hosts, ...parseStoredDomains(existing?.customDomain)]);
+    } catch (err) {
+      warnings.push(`storefront domains: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+    }
+  }
+
   // Storefront parent origins allowed to iframe-embed the assistant.
-  const origins = runtimeOrigins(shop, slug, existing?.customDomain);
+  const origins = runtimeOrigins(shop, slug, customDomain);
   const storefrontOrigins = origins.embedOrigins;
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
@@ -363,6 +390,7 @@ export async function runProvisionLifecycle(
     bmaiTenantId: tenantId,
     connectorId,
     identityProviderId,
+    customDomain,
     provisionState: "published",
     provisionError: null,
     provisionWarning,
