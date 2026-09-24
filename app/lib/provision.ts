@@ -439,8 +439,8 @@ export interface AuthTenantState {
  * an hour re-runs it, and it used to re-run the WHOLE lifecycle — a new
  * `publish_tenant_runtime` revision each time. Every re-publish reopened the
  * publish-to-apply window in which the storefront chat could not start, and on a
- * reinstalled store it fed the platform's reinstall deadlock (review store
- * 3qftjx-sh, revision 5 at 19:09). The token refresh itself is the library's job;
+ * reinstalled store it fed the platform's reinstall deadlock (a reviewer store,
+ * revision 5 at 19:09). The token refresh itself is the library's job;
  * provisioning is needed only when the tenant is NOT already live:
  *
  *   • no row / never published / suspended (a reinstall) / error → provision;
