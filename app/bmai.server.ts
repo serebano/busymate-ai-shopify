@@ -24,13 +24,15 @@ import type { Session } from "@shopify/shopify-app-react-router/server";
 import prisma from "./db.server";
 import { shopToSlug } from "./lib/tenantSlug";
 import { connectorEndpoint } from "./lib/connector";
-import { provisionOnInstall, type ProvisionDeps } from "./lib/provision";
+import { authNeedsProvision, provisionOnInstall, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
 import { buildKnowledgeForShop } from "./lib/kbFetch";
+import { fetchStorefrontHosts } from "./lib/storefrontDomains";
+import { adminForShop } from "./mcp/shopifyAdmin";
 import { launchIdentityRegistration } from "./lib/identity";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 
@@ -190,6 +192,10 @@ function liveProvisionDeps(): ProvisionDeps {
     // Train on the store in the same publish (Admin GraphQL through the refreshing
     // offline session). A failure is recorded as kbError, never blocks going live.
     buildKnowledge: buildKnowledgeForShop,
+    // #3718 — the store's real storefront domains (primary + others) join the
+    // embed-origin allowlist, so a shopper on a custom domain is never refused.
+    // Soft: a failed read keeps the previously stored domains.
+    storefrontHosts: async (shop) => fetchStorefrontHosts(await adminForShop(shop)),
     // Register this host's launch-JWT issuer as the tenant's visitor identity
     // provider (#2132 FAIL A) — only when the signing key exists (== /api/bmai/status
     // launchIdentity), so a provider is never registered for tokens we cannot mint.
@@ -260,6 +266,39 @@ export async function publishTenantRuntime(
 ): Promise<McpResult> {
   if (!tenantId) return { ok: false, error: "no provisioned tenant for this shop yet" };
   return callMcpTool("publish_tenant_runtime", publishArgs(shopProof(shop), tenantId, opts));
+}
+
+/**
+ * Re-run the idempotent provisioning lifecycle for a shop WITHOUT an admin
+ * request (the reconcile sweep, #3718). Admin reads go through the stored,
+ * refreshing offline session (`adminForShop`). Never throws.
+ */
+export async function reprovisionShop(shop: string) {
+  return provisionOnInstall({ shop }, liveProvisionDeps());
+}
+
+/**
+ * The afterAuth hook's entry point (#3718): provision only when the tenant is
+ * not already live — see `authNeedsProvision`. An expiring offline token's
+ * re-exchange (every admin open after ~1 h) no longer re-publishes a live
+ * tenant. NEVER THROWS: an unreadable row falls through to the idempotent,
+ * never-throwing lifecycle, exactly as before.
+ */
+export async function onAfterAuth(session: Session): Promise<void> {
+  let row: Parameters<typeof authNeedsProvision>[0] = null;
+  try {
+    row = await prisma.shopTenant.findUnique({
+      where: { shop: session.shop },
+      select: { provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true },
+    });
+  } catch {
+    row = null;
+  }
+  if (!authNeedsProvision(row)) {
+    console.log(`[bmai] afterAuth ${session.shop}: tenant already live (${row?.bmaiTenantId}) — no re-publish`);
+    return;
+  }
+  await onAppInstalled(session);
 }
 
 /** app/uninstalled → suspend/teardown the tenant (never hard-delete on uninstall). */

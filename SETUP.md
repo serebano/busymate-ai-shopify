@@ -162,6 +162,27 @@ change that needs every trained tenant re-projected):
 sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
 ```
 
+## 3c-ter. Tenant reconcile sweep (#3718) — orphaned, stuck, or refused tenants
+
+A row can say `published` while the storefront chat cannot open: the platform no longer
+resolves its tenant (orphaned, `tenantUnreachableAt` set), the published revision failed to
+activate (stuck), or the platform refuses the Online Store / Theme Editor chain. The sweep
+classifies every installed shop from the same two reads Home uses (MCP runtime readiness +
+the public `https://busymate.ai/api/embed-status` frameability answer) and re-runs the
+idempotent provisioning lifecycle for those rows. **Dry-run by default**; uninstalled
+(`suspended`) shops are never touched:
+
+```bash
+# report only (one JSON line per shop: verdict, action, runtime, frameable)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile'
+# repair the named shops (add --reprovision-unverified to also repair unreadable tenants)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile -- --apply <shop>.myshopify.com'
+```
+
+`afterAuth` no longer re-publishes a live tenant on every token re-exchange (expiring
+offline tokens re-exchange about hourly); it provisions only a new, reinstalled, errored or
+orphaned tenant (`authNeedsProvision`, `app/lib/provision.ts`).
+
 ## 3d. App Proxy (storefront identity) 🔒
 
 `shopify.app.toml` declares `[app_proxy] url = "https://store.busymate.ai"`,

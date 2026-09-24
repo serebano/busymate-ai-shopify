@@ -424,6 +424,38 @@ export function publishedRuntimeGaps(
   return `Not live yet: ${gaps.join("; ")}. Shoppers get product and policy answers only — reconnect after the Busymate AI platform update, or contact support.`;
 }
 
+/** The tenant-row slice the afterAuth decision reads. */
+export interface AuthTenantState {
+  provisionState?: string | null;
+  bmaiTenantId?: string | null;
+  tenantUnreachableAt?: Date | string | null;
+}
+
+/**
+ * AFTER-AUTH IDEMPOTENCY (#3718 — Shopify review 5.1.2).
+ *
+ * `afterAuth` runs on every token exchange, not only on install: with EXPIRING
+ * offline tokens (`expiringOfflineAccessTokens`, ~1 h) the first admin load after
+ * an hour re-runs it, and it used to re-run the WHOLE lifecycle — a new
+ * `publish_tenant_runtime` revision each time. Every re-publish reopened the
+ * publish-to-apply window in which the storefront chat could not start, and on a
+ * reinstalled store it fed the platform's reinstall deadlock (review store
+ * 3qftjx-sh, revision 5 at 19:09). The token refresh itself is the library's job;
+ * provisioning is needed only when the tenant is NOT already live:
+ *
+ *   • no row / never published / suspended (a reinstall) / error → provision;
+ *   • a published row whose tenant the platform no longer resolves
+ *     (`tenantUnreachableAt`, set by the meter on `tenant_management_denied`)
+ *     → provision: the orphan self-heals on the merchant's next admin open;
+ *   • otherwise → nothing (Home / Store connection keep their explicit Retry).
+ */
+export function authNeedsProvision(row: AuthTenantState | null | undefined): boolean {
+  if (!row) return true;
+  if (row.provisionState !== "published") return true;
+  if (!row.bmaiTenantId) return true;
+  return Boolean(row.tenantUnreachableAt);
+}
+
 /**
  * INSTALL-TIME GUARD — the ONLY entry point afterAuth may call.
  *

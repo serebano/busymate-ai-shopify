@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import {
   Badge,
   Banner,
@@ -21,6 +22,7 @@ import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
 import { callMcpTool, onAppInstalled } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
+import { embedCtaReady, readStorefrontFrameable } from "../lib/embedFrameable";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { planFor } from "../lib/plans";
@@ -42,6 +44,8 @@ import {
 } from "../lib/themeEmbed";
 
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
+/** The Busymate AI platform that serves the storefront chat (the extension's `data-origin`). */
+const PLATFORM_ORIGIN = process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -57,12 +61,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Busymate AI integration record); run them concurrently so the Home loader —
   // which every fetcher action revalidates — finishes in one round-trip, not two
   // (#idle-500: a long revalidation is the window in which an abort lands).
-  const [embed, runtime] = await Promise.all([
+  // #3718 — the third read: can the chat actually be FRAMED on the Online Store
+  // and in the Theme Editor right now (the platform's own frame-ancestors answer)?
+  const published = provisionState === "published" && Boolean(tenant?.bmaiTenantId);
+  const [embed, runtime, frameable] = await Promise.all([
     detectStorefrontEmbed(shop),
-    provisionState === "published" && tenant?.bmaiTenantId
+    published && tenant?.bmaiTenantId
       ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
+    published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
   ]);
   const live = runtime?.state === "ready";
+  // Offer "Turn on the storefront assistant" only once the chat will open (never
+  // a "refused to connect" in the editor the merchant is sent to); keep checking
+  // while it activates.
+  const embedReady = embedCtaReady(live, frameable);
+  const activating = published && !embedReady && runtime?.state !== "error";
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
@@ -99,6 +112,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
     planName: planFor(access.planId).name,
     live,
+    embedReady,
+    activating,
   };
 };
 
@@ -129,6 +144,18 @@ export default function Index() {
   const data = useLoaderData<typeof loader>();
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
+  // #3718 — while the assistant activates, re-check every 5 s (bounded to ~5 min)
+  // so "Turn on the storefront assistant" becomes available by itself.
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    if (!data.activating) return;
+    let ticks = 0;
+    const id = setInterval(() => {
+      if (++ticks > 60) return clearInterval(id);
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [data.activating, revalidator]);
   return (
     <Page>
       <TitleBar title="Busymate AI" />
@@ -213,11 +240,19 @@ export default function Index() {
                   The assistant is a theme app embed. Click the button to open your theme editor with{" "}
                   <strong>{data.embedLabel}</strong> already switched on, then click <strong>Save</strong>.
                 </Text>
+                {!data.embedReady ? (
+                  <Banner tone="info" title="Your assistant is being activated">
+                    <Text as="p">
+                      This usually takes less than a minute. This page checks again by itself and enables the button
+                      as soon as the assistant can be shown on your storefront and in the theme editor.
+                    </Text>
+                  </Banner>
+                ) : null}
                 <InlineStack gap="300">
-                  <Button variant="primary" url={data.activateUrl} target="_top">
+                  <Button variant="primary" url={data.embedReady ? data.activateUrl : undefined} target="_top" disabled={!data.embedReady}>
                     Turn on the storefront assistant
                   </Button>
-                  <Button url={data.appEmbedsUrl} target="_top">
+                  <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
                     Open App embeds
                   </Button>
                 </InlineStack>

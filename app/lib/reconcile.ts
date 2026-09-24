@@ -1,0 +1,56 @@
+/**
+ * The tenant RECONCILE sweep (#3718 — Shopify review 5.1.2).
+ *
+ * The app's own row can say `published` while the storefront chat cannot open:
+ *   • ORPHANED — the platform no longer resolves the tenant (our demo store:
+ *     `bmaiTenantId` 8fdb70ee… gone, launch 403 `tenant_not_found`);
+ *   • STUCK — the published revision failed to activate (the review store's
+ *     reinstall deadlock: `runtime.state = error`);
+ *   • LIVE BUT NOT FRAMEABLE — the platform refuses the storefront or the
+ *     Theme Editor chain (an allowlist that predates the store's domains).
+ * Nothing re-ran provisioning for those rows until a merchant happened to press
+ * Retry. This classifies every row from the same two reads Home uses (runtime
+ * readiness via MCP, frameability via the public embed-status answer) and
+ * names ONE action: re-run the idempotent provisioning lifecycle, or nothing.
+ *
+ * PURE. The script (`scripts/reconcile-tenants.ts`) does the I/O and applies
+ * only with `--apply`; uninstalled (suspended) shops are never touched.
+ */
+import type { RuntimeReadiness } from "./runtimeReadiness";
+import type { Frameable } from "./embedFrameable";
+
+export interface ReconcileRow {
+  shop: string;
+  provisionState: string | null;
+  bmaiTenantId: string | null;
+  tenantUnreachableAt: Date | string | null;
+}
+
+export type ReconcileVerdict = "live" | "activating" | "stuck" | "orphaned" | "not-frameable" | "failed-install" | "uninstalled" | "unverified" | "not-published";
+
+export interface ReconcilePlan {
+  verdict: ReconcileVerdict;
+  action: "none" | "reprovision";
+  reason: string;
+}
+
+export function planReconcile(
+  row: ReconcileRow,
+  reads: { readiness: RuntimeReadiness | null; frameable: Frameable },
+  opts: { reprovisionUnverified?: boolean } = {},
+): ReconcilePlan {
+  if (row.provisionState === "suspended") return { verdict: "uninstalled", action: "none", reason: "the app is uninstalled — never touched" };
+  if (row.provisionState === "error") return { verdict: "failed-install", action: "reprovision", reason: "the last provisioning run failed" };
+  if (row.provisionState !== "published" || !row.bmaiTenantId) return { verdict: "not-published", action: "none", reason: `provisionState=${row.provisionState ?? "none"}` };
+  if (row.tenantUnreachableAt) return { verdict: "orphaned", action: "reprovision", reason: "the platform no longer resolves this shop's tenant" };
+  const state = reads.readiness?.state ?? "unverified";
+  if (state === "error") return { verdict: "stuck", action: "reprovision", reason: "the published revision failed to activate" };
+  if (state === "pending") return { verdict: "activating", action: "none", reason: "the published revision is still activating" };
+  if (state === "unverified") {
+    return opts.reprovisionUnverified
+      ? { verdict: "unverified", action: "reprovision", reason: "the tenant could not be read (forced re-provision)" }
+      : { verdict: "unverified", action: "none", reason: "the tenant could not be read — re-run with --reprovision-unverified to repair" };
+  }
+  if (reads.frameable === false) return { verdict: "not-frameable", action: "reprovision", reason: "live, but the storefront or Theme Editor chain is refused" };
+  return { verdict: "live", action: "none", reason: reads.frameable === null ? "live (frameability not answered)" : "live and frameable" };
+}
