@@ -15,17 +15,30 @@ busymate-devtools (`fix/shopify-512`). This app half:
 - **afterAuth is idempotent** (`authNeedsProvision`): expiring offline tokens re-exchange
   about hourly and each exchange re-ran the whole lifecycle — a new published revision per
   admin open, each reopening the activation window. A live tenant is no longer
-  re-published; a new, reinstalled, errored or orphaned (`tenantUnreachableAt`) one is.
-- **Home offers "Turn on the storefront assistant" only when the chat can be framed** in
-  the Online Store AND the Theme Editor chain (the platform's public `/api/embed-status`,
-  `app/lib/embedFrameable.ts`), and re-checks every 5 s while activating. An unanswered
-  check falls back to runtime readiness (never blocks on "couldn't ask").
+  re-published; a new, reinstalled or errored one is. A live one is CHECKED in the
+  background instead (`app/lib/tenantRepair.ts`) and repaired, gated to once per shop per
+  10 min, only on a definite answer:
+  - **orphaned** — `get_tenant_integration` answers that the tenant is gone
+    ("administration denied" / "unavailable") → a first-class `orphaned` readiness state
+    (`app/lib/runtimeReadiness.ts`); no meter flag needed. Home repairs it on load too;
+  - **storefront domain missing** — the store has a domain its published allowlist lacks.
+- **`domains/create|update|destroy` webhooks** (`app/routes/webhooks.domains.tsx`, no
+  scope needed; active on the next `shopify app deploy`) re-read the store's domains and
+  repair the allowlist when one is missing.
+- **Home's "Turn on the storefront assistant"**: the platform's frameability answer
+  (`/api/embed-status`, Online Store + Theme Editor chain) decides whenever it answered —
+  `true` enables the CTA even while the readiness read is unverified or pending, `false`
+  holds it; only an unanswered check falls back to readiness, and "couldn't ask" never
+  holds it. While held, Home re-checks every 5 s for 5 min, then every 30 s with a
+  "taking longer" banner and Retry setup — it never stops. The embed step says the embed
+  stays on only after Save.
 - **Embed detector** matches the `assistant.js` asset tag + this store's `data-slug`
   (the hard-coded CDN UUID `01a04ae4…` said "off" for the live `busymate-ai-5` embed).
 - **Storefront domains** (primary + others, Admin API) join the embed-origin allowlist on
   every provisioning run, so a custom-domain storefront is never refused.
 - **Reconcile sweep** `npm run tenants:reconcile [-- --apply <shop>…]` (SETUP §3c-ter):
-  orphaned / stuck / refused tenants re-provisioned; dry-run by default.
+  orphaned (no flag) / stuck / domains-missing / refused tenants re-provisioned; its
+  frameability check asks every custom domain too; dry-run by default.
 - **Access log redaction**: `id_token`, `hmac`, `session`, `code`, `signature`, … are
   replaced in the host's request log (`app/lib/logRedact.ts`).
 - **Extension (`assistant.js`) hardening, NOT released**: retries `/embed/v1.js` with

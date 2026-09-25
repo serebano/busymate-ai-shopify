@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import {
   Badge,
@@ -20,9 +20,10 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
-import { callMcpTool, onAppInstalled } from "../bmai.server";
+import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
-import { embedCtaReady, readStorefrontFrameable } from "../lib/embedFrameable";
+import { embedCtaReady, readStorefrontFrameable, recheckDelayMs, recheckIsSlow } from "../lib/embedFrameable";
+import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { planFor } from "../lib/plans";
@@ -71,10 +72,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
   ]);
   const live = runtime?.state === "ready";
-  // Offer "Turn on the storefront assistant" only once the chat will open (never
-  // a "refused to connect" in the editor the merchant is sent to); keep checking
-  // while it activates.
-  const embedReady = embedCtaReady(live, frameable);
+  // #3718 — an ORPHANED tenant (the platform answered that it is gone) is
+  // repaired in the background right here, gated per shop; Home shows it as
+  // activating and re-checks until the chat can be framed.
+  if (published && tenant?.bmaiTenantId) {
+    const repair = publishedTenantRepair({ readiness: runtime, tenantUnreachableAt: tenant.tenantUnreachableAt });
+    if (repair) repairTenantInBackground(shop, repair);
+  }
+  // Offer "Turn on the storefront assistant" once the chat will open: the
+  // platform's frameability answer decides when it answered (a `true` enables it
+  // even while the readiness read is unverified or still pending); only a
+  // definite "not yet" holds it. Keep checking while it is held.
+  const embedReady = embedCtaReady(runtime?.state ?? null, frameable);
   const activating = published && !embedReady && runtime?.state !== "error";
   const steps = buildSetupChecklist({
     provisionState,
@@ -133,6 +142,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 function stateBadge(state: string) {
   if (state === "published") return <Badge tone="success">Live</Badge>;
   if (state === "runtime-pending") return <Badge tone="attention">Activating</Badge>;
+  if (state === "runtime-orphaned") return <Badge tone="attention">Repairing</Badge>;
   if (state === "runtime-unverified") return <Badge tone="warning">Status unavailable</Badge>;
   if (state === "runtime-error") return <Badge tone="critical">Activation failed</Badge>;
   if (state === "error") return <Badge tone="critical">Needs attention</Badge>;
@@ -144,17 +154,27 @@ export default function Index() {
   const data = useLoaderData<typeof loader>();
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
-  // #3718 — while the assistant activates, re-check every 5 s (bounded to ~5 min)
-  // so "Turn on the storefront assistant" becomes available by itself.
+  // #3718 — while the CTA is held, re-check by itself: every 5 s for 5 minutes,
+  // then every 30 s for as long as it is still held (never a silent stop).
   const revalidator = useRevalidator();
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
-    if (!data.activating) return;
-    let ticks = 0;
-    const id = setInterval(() => {
-      if (++ticks > 60) return clearInterval(id);
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, 5000);
-    return () => clearInterval(id);
+    if (!data.activating) {
+      setSlow(false);
+      return;
+    }
+    let tick = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const next = () => {
+      timer = setTimeout(() => {
+        tick += 1;
+        setSlow(recheckIsSlow(tick));
+        if (revalidator.state === "idle") revalidator.revalidate();
+        next();
+      }, recheckDelayMs(tick));
+    };
+    next();
+    return () => clearTimeout(timer);
   }, [data.activating, revalidator]);
   return (
     <Page>
@@ -240,12 +260,28 @@ export default function Index() {
                   The assistant is a theme app embed. Click the button to open your theme editor with{" "}
                   <strong>{data.embedLabel}</strong> already switched on, then click <strong>Save</strong>.
                 </Text>
-                {!data.embedReady ? (
+                {data.activating && !slow ? (
                   <Banner tone="info" title="Your assistant is being activated">
                     <Text as="p">
                       This usually takes less than a minute. This page checks again by itself and enables the button
                       as soon as the assistant can be shown on your storefront and in the theme editor.
                     </Text>
+                  </Banner>
+                ) : null}
+                {data.activating && slow ? (
+                  <Banner tone="warning" title="Activation is taking longer than usual">
+                    <BlockStack gap="200">
+                      <Text as="p">
+                        This page keeps checking every 30 seconds and enables the button by itself. You can also run
+                        setup again now.
+                      </Text>
+                      <retry.Form method="post">
+                        <input type="hidden" name="intent" value="retry" />
+                        <Button submit loading={retry.state !== "idle"}>
+                          Retry setup
+                        </Button>
+                      </retry.Form>
+                    </BlockStack>
                   </Banner>
                 ) : null}
                 <InlineStack gap="300">

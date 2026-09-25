@@ -58,9 +58,13 @@ async function ask(url: string, fetchImpl: typeof fetch, timeoutMs: number): Pro
   }
 }
 
-/** Online Store AND Theme Editor, concurrently, bounded by `timeoutMs` each. */
+/**
+ * Online Store AND Theme Editor (and, when given, each custom storefront
+ * domain — the reconcile sweep asks those too), concurrently, bounded by
+ * `timeoutMs` each.
+ */
 export async function readStorefrontFrameable(
-  opts: { platformOrigin: string; shop: string; slug: string },
+  opts: { platformOrigin: string; shop: string; slug: string; domains?: readonly string[] },
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 2500,
 ): Promise<Frameable> {
@@ -68,16 +72,45 @@ export async function readStorefrontFrameable(
   const answers = await Promise.all([
     ask(embedStatusUrl(opts.platformOrigin, opts.slug, [store]), fetchImpl, timeoutMs),
     ask(embedStatusUrl(opts.platformOrigin, opts.slug, [store, ...THEME_EDITOR_ANCESTORS]), fetchImpl, timeoutMs),
+    ...(opts.domains ?? []).map((host) => ask(embedStatusUrl(opts.platformOrigin, opts.slug, [`https://${host}`]), fetchImpl, timeoutMs)),
   ]);
   return foldFrameable(answers);
 }
 
+/** The runtime-readiness states Home can hold (null = nothing published yet). */
+export type RuntimeStateForCta = "ready" | "pending" | "error" | "unverified" | "orphaned" | null;
+
 /**
- * Home's "Turn on the storefront assistant" CTA is offered only when the
- * assistant can actually be shown: live on the platform AND (when the platform
- * could answer) frameable in both places. An unanswered frameability check
- * falls back to the runtime readiness alone — never blocks on "couldn't ask".
+ * Home's "Turn on the storefront assistant" CTA (#3718, review 5.1.2 + 5.1.3).
+ *
+ * The platform's frameability answer IS the question the browser will ask, so
+ * it decides whenever it answered: `true` enables the CTA whatever the runtime
+ * readiness read says (unverified, or still `pending`/`applying` after the frame
+ * already opens), `false` holds it. Only when the platform could NOT be asked
+ * does readiness decide — and then only a definite "not yet" (`pending`,
+ * `orphaned` while it is being repaired, `error`) holds it: "couldn't ask" never
+ * blocks the 5.1.3 onboarding deep link.
  */
-export function embedCtaReady(live: boolean, frameable: Frameable): boolean {
-  return live && frameable !== false;
+export function embedCtaReady(runtime: RuntimeStateForCta, frameable: Frameable): boolean {
+  if (frameable === true) return true;
+  if (frameable === false) return false;
+  return runtime !== "pending" && runtime !== "orphaned" && runtime !== "error";
+}
+
+/**
+ * While Home waits for the assistant to become frameable it re-checks by itself:
+ * every 5 s for the first 5 minutes, then every 30 s for as long as the page is
+ * open and the answer is still "not yet" — never a silent stop while the CTA is
+ * held. `slow` flips the banner to the longer-than-usual copy with Retry setup.
+ */
+export const RECHECK_FAST_MS = 5_000;
+export const RECHECK_SLOW_MS = 30_000;
+export const RECHECK_FAST_TICKS = 60;
+
+export function recheckDelayMs(tick: number): number {
+  return tick < RECHECK_FAST_TICKS ? RECHECK_FAST_MS : RECHECK_SLOW_MS;
+}
+
+export function recheckIsSlow(tick: number): boolean {
+  return tick >= RECHECK_FAST_TICKS;
 }

@@ -35,6 +35,8 @@ import { fetchStorefrontHosts } from "./lib/storefrontDomains";
 import { adminForShop } from "./mcp/shopifyAdmin";
 import { launchIdentityRegistration } from "./lib/identity";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
+import { readRuntimeReadiness } from "./lib/runtimeReadiness";
+import { checkPublishedTenant, createRepairGate, publishedTenantRepair, type RepairDecision } from "./lib/tenantRepair";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
 // management are both Busymate AI operations and therefore use busymate.ai/mcp.
@@ -278,27 +280,88 @@ export async function reprovisionShop(shop: string) {
 }
 
 /**
+ * #3718 — a PUBLISHED tenant is repaired (the idempotent lifecycle, in the
+ * background) only for a definite reason: the platform no longer resolves it,
+ * or the store has a storefront domain its allowlist lacks. Gated per shop so a
+ * persistent answer never becomes a re-publish on every admin open, webhook or
+ * Home poll. See app/lib/tenantRepair.ts.
+ */
+const repairGate = createRepairGate({ cooldownMs: 10 * 60_000 });
+
+export function repairTenantInBackground(shop: string, decision: RepairDecision): boolean {
+  if (!repairGate.tryStart(shop)) return false;
+  console.log(`[bmai] repair ${shop}: ${decision.reason} — ${decision.detail}`);
+  void reprovisionShop(shop)
+    .then(
+      (out) => console.log(`[bmai] repair ${shop} (${decision.reason}): ${out.ok ? `ok tenant=${out.tenantId}` : `failed: ${out.error ?? "unknown"}`}`),
+      (err) => console.error(`[bmai] repair ${shop} (${decision.reason}) threw: ${err instanceof Error ? err.message : String(err)}`),
+    )
+    .finally(() => repairGate.finish(shop));
+  return true;
+}
+
+const liveCheckDeps = {
+  readReadiness: (tenantId: string) => readRuntimeReadiness(tenantId, callMcpTool),
+  readFreshHosts: async (shop: string) => fetchStorefrontHosts(await adminForShop(shop)),
+  repair: (shop: string, decision: RepairDecision) => { repairTenantInBackground(shop, decision); },
+};
+
+/**
  * The afterAuth hook's entry point (#3718): provision only when the tenant is
  * not already live — see `authNeedsProvision`. An expiring offline token's
  * re-exchange (every admin open after ~1 h) no longer re-publishes a live
- * tenant. NEVER THROWS: an unreadable row falls through to the idempotent,
- * never-throwing lifecycle, exactly as before.
+ * tenant; instead a live row is CHECKED in the background (orphaned tenant,
+ * storefront domains added since the last publish) and repaired only on a
+ * definite answer. NEVER THROWS and never delays the admin load: an unreadable
+ * row falls through to the idempotent, never-throwing lifecycle, exactly as
+ * before.
  */
 export async function onAfterAuth(session: Session): Promise<void> {
-  let row: Parameters<typeof authNeedsProvision>[0] = null;
+  let row: {
+    provisionState?: string | null;
+    bmaiTenantId?: string | null;
+    tenantUnreachableAt?: Date | null;
+    customDomain?: string | null;
+  } | null = null;
   try {
     row = await prisma.shopTenant.findUnique({
       where: { shop: session.shop },
-      select: { provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true },
+      select: { provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true, customDomain: true },
     });
   } catch {
     row = null;
   }
   if (!authNeedsProvision(row)) {
-    console.log(`[bmai] afterAuth ${session.shop}: tenant already live (${row?.bmaiTenantId}) — no re-publish`);
+    console.log(`[bmai] afterAuth ${session.shop}: tenant already live (${row?.bmaiTenantId}) — checking, no re-publish`);
+    void checkPublishedTenant(
+      { shop: session.shop, bmaiTenantId: row!.bmaiTenantId!, customDomain: row?.customDomain, tenantUnreachableAt: row?.tenantUnreachableAt },
+      liveCheckDeps,
+    ).catch(() => null);
     return;
   }
   await onAppInstalled(session);
+}
+
+/**
+ * `domains/create|update|destroy` (#3718): re-read the store's storefront
+ * domains and repair the tenant when one is missing from its published
+ * allowlist. Background, gated, never throws.
+ */
+export async function refreshStorefrontDomains(shop: string): Promise<RepairDecision | null> {
+  try {
+    const row = await prisma.shopTenant.findUnique({
+      where: { shop },
+      select: { provisionState: true, bmaiTenantId: true, customDomain: true },
+    });
+    if (row?.provisionState !== "published" || !row.bmaiTenantId) return null;
+    const fresh = await fetchStorefrontHosts(await adminForShop(shop));
+    const decision = publishedTenantRepair({ readiness: null, storedDomains: row.customDomain, freshHosts: fresh });
+    if (decision) repairTenantInBackground(shop, decision);
+    return decision;
+  } catch (err) {
+    console.error(`[bmai] domains refresh ${shop}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 /** app/uninstalled → suspend/teardown the tenant (never hard-delete on uninstall). */

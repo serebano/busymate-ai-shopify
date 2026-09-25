@@ -447,7 +447,12 @@ export interface AuthTenantState {
  *   • a published row whose tenant the platform no longer resolves
  *     (`tenantUnreachableAt`, set by the meter on `tenant_management_denied`)
  *     → provision: the orphan self-heals on the merchant's next admin open;
- *   • otherwise → nothing (Home / Store connection keep their explicit Retry).
+ *   • otherwise → no provisioning on the auth path. The live row is CHECKED in
+ *     the background instead (`checkPublishedTenant`, app/lib/tenantRepair.ts):
+ *     a tenant the platform no longer resolves (`get_tenant_integration` answers
+ *     "administration denied" / "unavailable" → readiness `orphaned`, no meter
+ *     flag needed) or a storefront domain missing from the published allowlist
+ *     is repaired by the same idempotent lifecycle, gated per shop.
  */
 export function authNeedsProvision(row: AuthTenantState | null | undefined): boolean {
   if (!row) return true;

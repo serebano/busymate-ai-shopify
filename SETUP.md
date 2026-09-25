@@ -165,23 +165,30 @@ sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-a
 ## 3c-ter. Tenant reconcile sweep (#3718) — orphaned, stuck, or refused tenants
 
 A row can say `published` while the storefront chat cannot open: the platform no longer
-resolves its tenant (orphaned, `tenantUnreachableAt` set), the published revision failed to
-activate (stuck), or the platform refuses the Online Store / Theme Editor chain. The sweep
-classifies every installed shop from the same two reads Home uses (MCP runtime readiness +
-the public `https://busymate.ai/api/embed-status` frameability answer) and re-runs the
-idempotent provisioning lifecycle for those rows. **Dry-run by default**; uninstalled
+resolves its tenant (orphaned — `get_tenant_integration` answers "administration denied" /
+"unavailable", or the meter set `tenantUnreachableAt`), the published revision failed to
+activate (stuck), the store has a storefront domain the published allowlist lacks
+(domains-missing), or the platform refuses the Online Store / a custom domain / the Theme
+Editor chain. The sweep classifies every installed shop from the reads Home and afterAuth use
+(MCP runtime readiness, the store's domains via the Admin API, and the public
+`https://busymate.ai/api/embed-status` frameability answer) and re-runs the idempotent
+provisioning lifecycle for those rows. **Dry-run by default**; uninstalled
 (`suspended`) shops are never touched:
 
 ```bash
 # report only (one JSON line per shop: verdict, action, runtime, frameable)
 sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile'
-# repair the named shops (add --reprovision-unverified to also repair unreadable tenants)
+# repair the named shops (orphaned, stuck, domains-missing and refused rows need no flag;
+# add --reprovision-unverified only to also repair tenants that could not be read at all)
 sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile -- --apply <shop>.myshopify.com'
 ```
 
 `afterAuth` no longer re-publishes a live tenant on every token re-exchange (expiring
-offline tokens re-exchange about hourly); it provisions only a new, reinstalled, errored or
-orphaned tenant (`authNeedsProvision`, `app/lib/provision.ts`).
+offline tokens re-exchange about hourly); it provisions only a new, reinstalled or errored
+tenant (`authNeedsProvision`, `app/lib/provision.ts`), and checks a live one in the
+background — an orphaned tenant or a missing storefront domain is repaired, at most once per
+shop per 10 minutes (`app/lib/tenantRepair.ts`). The `domains/*` webhooks and Home's load run
+the same check.
 
 ## 3d. App Proxy (storefront identity) 🔒
 

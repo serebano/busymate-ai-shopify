@@ -180,7 +180,7 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
           ? "The \"Ask us\" launcher is live on your storefront."
           : s.embed === "off"
             ? "Not on yet — the launcher is not loading on your storefront."
-            : "Enable the app embed in your theme editor (we can't confirm it on a password-protected store).",
+            : "Switch the app embed on in your theme editor and click Save — it only stays on once saved (we can't confirm it on a password-protected store).",
       done: s.embed === "on",
       failed: false,
     },

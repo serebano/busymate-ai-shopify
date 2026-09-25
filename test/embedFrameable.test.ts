@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   THEME_EDITOR_ANCESTORS,
   embedCtaReady,
+  recheckDelayMs,
+  recheckIsSlow,
   embedStatusUrl,
   foldFrameable,
   parseEmbedStatus,
@@ -59,11 +61,50 @@ describe("embed frameability (#3718)", () => {
     expect(foldFrameable([])).toBe(false);
   });
 
-  it("the CTA needs a live assistant, and is held on a definite no only", () => {
-    expect(embedCtaReady(true, true)).toBe(true);
-    expect(embedCtaReady(true, null)).toBe(true);
-    expect(embedCtaReady(true, false)).toBe(false);
-    expect(embedCtaReady(false, true)).toBe(false);
+  // #3718 review defect 4 — the platform's frameability answer decides whenever
+  // it answered; readiness decides only when the platform could not be asked,
+  // and then only a definite "not yet" holds the 5.1.3 onboarding deep link.
+  it("frameable === true enables the CTA whatever the readiness read says", () => {
+    for (const state of ["ready", "pending", "unverified", "orphaned", "error", null] as const) {
+      expect(embedCtaReady(state, true), String(state)).toBe(true);
+    }
+  });
+
+  it("frameable === false holds the CTA whatever the readiness read says", () => {
+    for (const state of ["ready", "pending", "unverified", "orphaned", "error", null] as const) {
+      expect(embedCtaReady(state, false), String(state)).toBe(false);
+    }
+  });
+
+  it("an unanswered frameability check never blocks on 'couldn't ask'", () => {
+    expect(embedCtaReady("ready", null)).toBe(true);
+    expect(embedCtaReady("unverified", null)).toBe(true);
+    expect(embedCtaReady("pending", null)).toBe(false);
+    expect(embedCtaReady("orphaned", null)).toBe(false);
+    expect(embedCtaReady("error", null)).toBe(false);
+  });
+
+  it("re-checks every 5 s for 5 minutes, then every 30 s — never stops", () => {
+    expect(recheckDelayMs(0)).toBe(5_000);
+    expect(recheckDelayMs(59)).toBe(5_000);
+    expect(recheckDelayMs(60)).toBe(30_000);
+    expect(recheckDelayMs(10_000)).toBe(30_000);
+    expect(recheckIsSlow(59)).toBe(false);
+    expect(recheckIsSlow(60)).toBe(true);
+    // 60 fast ticks ≈ 5 minutes.
+    expect(60 * recheckDelayMs(0)).toBe(300_000);
+  });
+
+  it("asks each custom storefront domain as its own ancestor when given", async () => {
+    const asked: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      asked.push(new URL(url).searchParams.get("ancestors") ?? "");
+      const refused = url.includes("www.brand.example");
+      return { ok: true, json: async () => ({ frameable: !refused }) };
+    }) as unknown as typeof fetch;
+    const out = await readStorefrontFrameable({ platformOrigin: "https://busymate.ai", shop: "d.myshopify.com", slug: "shop-d", domains: ["www.brand.example"] }, fetchImpl);
+    expect(asked).toContain("https://www.brand.example");
+    expect(out).toBe(false);
   });
 
   it("builds the public endpoint URL on the platform origin", () => {
