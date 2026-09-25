@@ -4,6 +4,23 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-25 — 0.1.13 (host deploy pending): uninstall and GDPR webhooks no longer answer 500 after the offline token expires (busymate-devtools#3731)
+
+Found during the 5.1.2 live acceptance run: the Dev Dashboard showed a 51.4 % webhook
+failure rate. `authenticate.webhook` refreshes an expired offline token before it returns,
+and after an uninstall that refresh fails, so `app/uninstalled` and the compliance topics
+answered 500 whenever the shop's token was more than about 55 minutes old. The tenant was
+never suspended, the sessions were never purged, and `shop/redact` could never run.
+
+- `app/lib/webhookAuth.ts`: `authenticateWebhookWithoutSession` checks what the library
+  checks first (POST, HMAC over the raw body, the required headers) and never loads or
+  refreshes a session. The topic is normalised the same way (`app/uninstalled` →
+  `APP_UNINSTALLED`).
+- `webhooks.app.uninstalled.tsx` and `webhooks.compliance.tsx` use it. Other webhook routes
+  keep `authenticate.webhook`, because they call the Admin API.
+- `test/webhookAuth.test.ts`: signature, fail-closed 401/400/405, topic keys, and a pin
+  that the two routes never call `authenticate.webhook`.
+
 ## 2026-09-25 — 0.1.12: Shopify review 5.1.2 — the storefront chat never opens "refused to connect" (busymate-devtools#3718)
 
 App Review paused (ref 132497) on 5.1.2: the app embed's chat showed "busymate.ai refused
