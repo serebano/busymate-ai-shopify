@@ -4,6 +4,55 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-09-25 — 0.1.12: Shopify review 5.1.2 — the storefront chat never opens "refused to connect" (busymate-devtools#3718)
+
+App Review paused (ref 132497) on 5.1.2: the app embed's chat showed "busymate.ai refused
+to connect" in the Theme Editor, and the widget was gone after a reopen. The causes were on
+our side (platform readiness deadlock on reinstall, a publish-to-frameable window, legacy
+allowlists without the Theme Editor frames, an orphaned tenant); the platform half ships in
+busymate-devtools (`fix/shopify-512`). This app half:
+
+- **afterAuth is idempotent** (`authNeedsProvision`): expiring offline tokens re-exchange
+  about hourly and each exchange re-ran the whole lifecycle — a new published revision per
+  admin open, each reopening the activation window. A live tenant is no longer
+  re-published; a new, reinstalled or errored one is. A live one is CHECKED in the
+  background instead (`app/lib/tenantRepair.ts`) and repaired, gated to once per shop per
+  10 min, only on a definite answer:
+  - **orphaned** — `get_tenant_integration` answers that the tenant is gone
+    ("administration denied" / "unavailable") → a first-class `orphaned` readiness state
+    (`app/lib/runtimeReadiness.ts`); no meter flag needed. Home repairs it on load too;
+  - **storefront domain missing** — the store has a domain its published allowlist lacks.
+  A successful publish clears the meter's `tenantUnreachableAt`, so a repaired tenant is not
+  re-repaired every 10 min until the next hourly meter run.
+- **`domains/create|update|destroy` webhooks** (`app/routes/webhooks.domains.tsx`, no
+  scope needed; active on the next `shopify app deploy`, which also releases the
+  `assistant.js` hardening below — one decision) re-read the store's domains and repair the
+  allowlist when one is missing.
+- **Home's "Turn on the storefront assistant"**: the platform's frameability answer
+  (`/api/embed-status`, Online Store + Theme Editor chain) decides whenever it answered —
+  `true` enables the CTA even while the readiness read is unverified or pending, `false`
+  holds it; only an unanswered check falls back to readiness, and "couldn't ask" never
+  holds it. While held, Home re-checks every 5 s for 5 min, then every 30 s with a
+  "taking longer" banner and Retry setup — it never stops. One loop runs per hold
+  (`app/lib/activationRecheck.ts` + `useActivationRecheck`): the first version listed
+  react-router's revalidator as an effect dependency, which is a new object on every
+  re-check, so the loop restarted each time and the banner never came
+  (`test/activationRecheck.test.ts` drives the hook in a real data router). The embed step
+  says the embed stays on only after Save.
+- **Embed detector** matches the `assistant.js` asset tag + this store's `data-slug`
+  (the hard-coded CDN UUID `01a04ae4…` said "off" for the live `busymate-ai-5` embed).
+- **Storefront domains** (primary + others, Admin API) join the embed-origin allowlist on
+  every provisioning run, so a custom-domain storefront is never refused.
+- **Reconcile sweep** `npm run tenants:reconcile [-- --apply <shop>…]` (SETUP §3c-ter):
+  orphaned (no flag) / stuck / domains-missing / refused tenants re-provisioned; its
+  frameability check asks every custom domain too; dry-run by default.
+- **Access log redaction**: `id_token`, `hmac`, `session`, `code`, `signature`, … are
+  replaced in the host's request log (`app/lib/logRedact.ts`).
+- **Extension (`assistant.js`) hardening, NOT released**: retries `/embed/v1.js` with
+  backoff, a plain link to the hosted assistant if the loader cannot load, tolerates a null
+  `document.currentScript`, re-ensures the launcher after a Theme Editor section
+  re-render. Needs a new extension version; the release is held for the owner.
+
 ## 2026-09-13 — 0.1.11: zero-usage display + quiet skip for a deprovisioned tenant (#19)
 
 Two review-store bugs found verifying the metering counter (0.1.9/0.1.10):

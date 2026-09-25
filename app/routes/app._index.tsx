@@ -19,8 +19,11 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
-import { callMcpTool, onAppInstalled } from "../bmai.server";
+import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
+import { embedCtaReady, readStorefrontFrameable } from "../lib/embedFrameable";
+import { useActivationRecheck } from "../lib/useActivationRecheck";
+import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { planFor } from "../lib/plans";
@@ -42,6 +45,8 @@ import {
 } from "../lib/themeEmbed";
 
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
+/** The Busymate AI platform that serves the storefront chat (the extension's `data-origin`). */
+const PLATFORM_ORIGIN = process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -57,12 +62,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // Busymate AI integration record); run them concurrently so the Home loader —
   // which every fetcher action revalidates — finishes in one round-trip, not two
   // (#idle-500: a long revalidation is the window in which an abort lands).
-  const [embed, runtime] = await Promise.all([
+  // #3718 — the third read: can the chat actually be FRAMED on the Online Store
+  // and in the Theme Editor right now (the platform's own frame-ancestors answer)?
+  const published = provisionState === "published" && Boolean(tenant?.bmaiTenantId);
+  const [embed, runtime, frameable] = await Promise.all([
     detectStorefrontEmbed(shop),
-    provisionState === "published" && tenant?.bmaiTenantId
+    published && tenant?.bmaiTenantId
       ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
+    published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
   ]);
   const live = runtime?.state === "ready";
+  // #3718 — an ORPHANED tenant (the platform answered that it is gone) is
+  // repaired in the background right here, gated per shop; Home shows it as
+  // activating and re-checks until the chat can be framed.
+  if (published && tenant?.bmaiTenantId) {
+    const repair = publishedTenantRepair({ readiness: runtime, tenantUnreachableAt: tenant.tenantUnreachableAt });
+    if (repair) repairTenantInBackground(shop, repair);
+  }
+  // Offer "Turn on the storefront assistant" once the chat will open: the
+  // platform's frameability answer decides when it answered (a `true` enables it
+  // even while the readiness read is unverified or still pending); only a
+  // definite "not yet" holds it. Keep checking while it is held.
+  const embedReady = embedCtaReady(runtime?.state ?? null, frameable);
+  const activating = published && !embedReady && runtime?.state !== "error";
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
@@ -99,6 +121,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
     planName: planFor(access.planId).name,
     live,
+    embedReady,
+    activating,
   };
 };
 
@@ -118,6 +142,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 function stateBadge(state: string) {
   if (state === "published") return <Badge tone="success">Live</Badge>;
   if (state === "runtime-pending") return <Badge tone="attention">Activating</Badge>;
+  if (state === "runtime-orphaned") return <Badge tone="attention">Repairing</Badge>;
   if (state === "runtime-unverified") return <Badge tone="warning">Status unavailable</Badge>;
   if (state === "runtime-error") return <Badge tone="critical">Activation failed</Badge>;
   if (state === "error") return <Badge tone="critical">Needs attention</Badge>;
@@ -129,6 +154,10 @@ export default function Index() {
   const data = useLoaderData<typeof loader>();
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
+  // #3718 — while the CTA is held, re-check by itself: every 5 s for 5 minutes,
+  // then every 30 s for as long as it is still held (never a silent stop), and
+  // switch to the "taking longer" banner with Retry setup after 5 minutes.
+  const slow = useActivationRecheck(data.activating);
   return (
     <Page>
       <TitleBar title="Busymate AI" />
@@ -213,11 +242,35 @@ export default function Index() {
                   The assistant is a theme app embed. Click the button to open your theme editor with{" "}
                   <strong>{data.embedLabel}</strong> already switched on, then click <strong>Save</strong>.
                 </Text>
+                {data.activating && !slow ? (
+                  <Banner tone="info" title="Your assistant is being activated">
+                    <Text as="p">
+                      This usually takes less than a minute. This page checks again by itself and enables the button
+                      as soon as the assistant can be shown on your storefront and in the theme editor.
+                    </Text>
+                  </Banner>
+                ) : null}
+                {data.activating && slow ? (
+                  <Banner tone="warning" title="Activation is taking longer than usual">
+                    <BlockStack gap="200">
+                      <Text as="p">
+                        This page keeps checking every 30 seconds and enables the button by itself. You can also run
+                        setup again now.
+                      </Text>
+                      <retry.Form method="post">
+                        <input type="hidden" name="intent" value="retry" />
+                        <Button submit loading={retry.state !== "idle"}>
+                          Retry setup
+                        </Button>
+                      </retry.Form>
+                    </BlockStack>
+                  </Banner>
+                ) : null}
                 <InlineStack gap="300">
-                  <Button variant="primary" url={data.activateUrl} target="_top">
+                  <Button variant="primary" url={data.embedReady ? data.activateUrl : undefined} target="_top" disabled={!data.embedReady}>
                     Turn on the storefront assistant
                   </Button>
-                  <Button url={data.appEmbedsUrl} target="_top">
+                  <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
                     Open App embeds
                   </Button>
                 </InlineStack>
