@@ -18,7 +18,7 @@ before 2026-10-08, and only after every "Before resubmitting" box below is ticke
 
 Reason for the pause: "Multiple failures to resolve a core requirement issue".
 
-## 5.1.2 — what broke, and the change that closes each (deploy pending)
+## 5.1.2 — what broke, and the change that closes each (deployed 2026-09-25: platform ai 937, app 0.1.12; proven live, see [Live acceptance run](#live-acceptance-run--2026-09-25-utc))
 
 "Refused to connect" was **our** `frame-ancestors` header on `busymate.ai/support/<slug>`,
 never Shopify (the storefront's own CSP has no `frame-src`/`script-src` limits).
@@ -46,6 +46,8 @@ page; L02 the new loader holds instead; L03 it opens by itself when the tenant g
 a disallowed origin is held, never refused. (An earlier "L04 cold tab" shot was a byte-identical
 copy of L03 and has been removed.) **The real proof is steps 1–8 below, run on our stores after
 both halves are deployed (shots P01–P08 on #3718). Do not call 5.1.2 fixed before they pass.**
+They passed on 2026-09-25: see [Live acceptance run](#live-acceptance-run--2026-09-25-utc) and
+[`5.1.2-proof-live/`](5.1.2-proof-live/) (real stores, the real chat, no stub).
 
 ### How to verify 5.1.2 (after both halves are deployed)
 
@@ -59,7 +61,10 @@ both halves are deployed (shots P01–P08 on #3718). Do not call 5.1.2 fixed bef
    launch-gate probe in the platform ship note (`notes/next-ship/3718-shopify-512.md`, a
    `shopifypreview.com` parent → `400 invalid_revoke`, not `403 launch_denied`) passes. Until it
    does, do not claim preview links work.
-3. **Fresh install, App Test Store -2 (`gknqt6-9w`)**: install → Home → wait until
+3. **Fresh install on a fresh development store** (App Test Store -2 `gknqt6-9w` is not
+   reachable from our Partner account: its admin answers "doesn't have permission", and it is
+   not in the Dev Dashboard store list; the 2026-09-25 run used a new dev store,
+   `busymate-ai-review-test-6`, created in our Dev Dashboard org): install → Home → wait until
    "Turn on the storefront assistant" is enabled → click → **Save** in the theme editor → in the
    preview open "Ask us" within 5 s → the chat renders (not refused) **and answers a message**.
 4. **Storefront, anonymous**: a fresh browser context (no admin session), open the store,
@@ -81,6 +86,49 @@ both halves are deployed (shots P01–P08 on #3718). Do not call 5.1.2 fixed bef
    (Custom domains: none of our dev stores has one; the reconcile line lists the `domains` it
    asked the platform about.)
 
+## Live acceptance run — 2026-09-25 (UTC)
+
+Run as the reviewer on our own development stores only: web build **ai 937** (`154bb15cf`),
+app **0.1.12** on the host (`0bc639c`), theme extension `busymate-ai-5` (unchanged, no new
+version). Browser: the `shopify-dev` bmc Chrome, driven through the DevTools MCP with real mouse
+and keyboard input, in tabs and browser contexts opened and closed by the run. Shots are in
+[`5.1.2-proof-live/`](5.1.2-proof-live/); none shows a token, `hmac`, `id_token`, session or
+password. **Result: steps 1–8 pass.**
+
+| Step | Result | Evidence |
+|---|---|---|
+| 1. `/support/shop-busymate-ai-demo-store` header | **pass**: `frame-ancestors 'self' https://busymate.ai https://busymate-ai-demo-store.myshopify.com https://admin.shopify.com https://online-store-web.shopifyapps.com https://*.shopifypreview.com`, no `x-frame-options` (01:58 and 02:36) | curl |
+| 2. `/api/embed-status` + Edge launch gate | **pass**: store + editor chain → `{"frameable":true,"revision":1}`; `evil.example` → `frameable:false`. `support-launch` probe (`mode:"revoke"`, no session minted): `*.shopifypreview.com` parent → `400 invalid_revoke`; `evil.example` → `403 launch_denied` (02:28:51) | curl |
+| 3. Fresh install → Home → CTA → Save → "Ask us" in the Theme Editor | **pass**: Install 02:04:36; Home rendered 02:04:40 with "Turn on the storefront assistant" **enabled**; `embed-status` answered `frameable:true` for the new tenant by 02:04:59. CTA → Theme Editor "Busymate AI assistant activated" → **Save** ("Changes saved.") → "Ask us" → the **real chat** (no "refused to connect") → "What products do you sell?" answered from the store's catalogue. Within 5 s of Save: on the second store, embed off + Save, then on + Save, "Ask us" 4.9 s after Save → the real chat | [P01](5.1.2-proof-live/P01-fresh-install-home-cta-enabled.png), [P02](5.1.2-proof-live/P02-theme-editor-embed-saved-chat-renders.png), [P03](5.1.2-proof-live/P03-theme-editor-chat-answers.png), [P08c](5.1.2-proof-live/P08c-demo-editor-5s-after-save.png) |
+| 4. Storefront, anonymous shopper | **pass**: new browser context (no admin cookies) → storefront password → launcher → "Do you have a snowboard under $700?" answered (Search products) | [P04](5.1.2-proof-live/P04-storefront-anonymous-chat-answers.png) |
+| 5. Uninstall → reinstall → repeat 3 and 4 | **pass**: uninstall 02:13:03 (`app/uninstalled` 200, tenant suspended, `embed-status` `frameable:false`); reinstall 02:14:01 → `frameable:true` at **revision 5 by 02:14:12** (the reinstall deadlock is gone; the app logged "reinstalled (tenant reactivated)"). Editor: embed still saved on, chat answers; storefront (new anonymous context) answers | [P05](5.1.2-proof-live/P05-reinstall-theme-editor-chat-answers.png), [P06](5.1.2-proof-live/P06-reinstall-storefront-anonymous-chat-answers.png), [X1](5.1.2-proof-live/X1-home-live-after-reinstall.png) |
+| 6. Close everything, reopen | **pass**: every tab and context closed (no page target left), then a new window → Theme Editor → App embeds: "Busymate AI assistant" **on, Save greyed (saved)**, launcher shown, chat opens; storefront in a new anonymous context: launcher shown, chat opens. The "on and saved but no launcher" case of the reviewer's third video did **not** occur | [P07](5.1.2-proof-live/P07-reopen-editor-embed-saved-on-launcher.png), [P07b](5.1.2-proof-live/P07b-reopen-editor-chat-opens.png), [P07c](5.1.2-proof-live/P07c-reopen-storefront-chat-opens.png) |
+| 7. A message right after a re-publish | **pass**: Re-train 02:21:18 → the chat server applied revision 7 by 02:21:23 (10 s projection); storefront reloaded (new launch) 02:21:30 → message answered, no "usage limits could not be verified", no "could not start". The projection closed the skew window within 5 s, so this run did not hold a session on a revision ahead of the chat server | [X2](5.1.2-proof-live/X2-message-right-after-retrain-answered.png) |
+| 8. Second store (Busymate AI Demo Store) | **pass**: `tenants:reconcile` dry-run (01:59) reads the demo store **`live` / frameable / runtime ready**. It was already repaired before this run (its row was updated 01:51, right after the 0.1.12 deploy), so no `--apply` was needed. Editor: the embed is on and saved, the chat opens where it answered "refused to connect" on 2026-09-25 02:02 (shot 08 of the diagnosis). Storefront, anonymous: answered | [P08](5.1.2-proof-live/P08-demo-store-theme-editor-chat-answers.png), [P08b](5.1.2-proof-live/P08b-demo-store-storefront-anonymous-chat-answers.png) |
+
+Screencast of the reviewer flow (install → Home → turn on → Save → Theme Editor chat →
+anonymous storefront → uninstall + reinstall → close and reopen → second store):
+[`5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4`](5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4)
+(H.264, 1440×880, 80 s). It is a captioned sequence of 23 real browser frames captured during
+this run, not a continuous screen recording.
+
+**Found during the run (not a 5.1.2 cause):**
+- **Uninstall and GDPR webhooks answer 500 when the shop's offline token has expired**
+  (busymate-devtools#3731). `authenticate.webhook` refreshes the expired token first, and after an
+  uninstall that fails. This is why the Dev Dashboard shows a **51.4 % webhook failure rate**. The
+  Shopify review stores `app-review-6a24a432-*` still read `published` because their uninstall was
+  never processed. Fix: [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43)
+  (0.1.13, verifies the HMAC without a session). **Host deploy pending.** Our own uninstalls on
+  a fresh token answered 200.
+- Home loaded during the ~4 s afterAuth publish shows the **Provisioning** badge with the CTA
+  enabled ("couldn't ask" never holds it), and it does not refresh itself because nothing is
+  held. The loader's pre-flight covers an early "Ask us" (it waits and opens by itself, never
+  refused). "Refresh status" or a reload shows **Live** (X1). The testing instructions' step 1
+  ("Confirm … Live") may need "click Refresh status if it still says Provisioning".
+- Cleanup: the app was uninstalled from `busymate-ai-review-test-6` at 02:26 (tenant suspended;
+  `shop/redact` deletes it, which works here because the uninstall purged the session). The dev
+  store itself is kept. The demo store's embed is on and saved, as before.
+
 ## Requirement checklist (confirmed against shopify.dev on 2026-09-25)
 
 Source: <https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements> and
@@ -89,10 +137,10 @@ apply to this app are listed; the numbers are Shopify's.
 
 | Requirement | State | Evidence |
 |---|---|---|
-| **5.1.2** App widget displayed properly, without errors, in the Theme Editor and Online Store | fixed in code, **not yet proven live** | the table above; steps 1–8 |
+| **5.1.2** App widget displayed properly, without errors, in the Theme Editor and Online Store | fixed, **proven live 2026-09-25** | steps 1–8 pass: [Live acceptance run](#live-acceptance-run--2026-09-25-utc), P01–P08c, screencast |
 | **5.1.1** Theme changes only through a theme app extension | met | one app embed (`storefront-assistant`), no theme file writes, no `read_themes`/`write_themes` scope |
 | **5.1.3** Detailed setup instructions for the app embed, deep link recommended | met | Home "Turn on the storefront assistant" (`activateAppId=<client_id>/assistant`) + "Or do it by hand" steps ending in **Save**; never held on "couldn't ask" (cause 8) |
-| **5.1.4** App-name branding in storefront components only where shoppers interact with it | check | the launcher label is the merchant's ("Ask us" by default, editable in the embed settings); confirm in step 3 that the chat panel shows the store's assistant, not "Busymate AI" |
+| **5.1.4** App-name branding in storefront components only where shoppers interact with it | met (2026-09-25) | the launcher label is the merchant's ("Ask us" by default, editable in the embed settings); the chat panel shows the store's assistant ("Hi, I'm your mate"), not "Busymate AI" (P02, P04). "Busymate AI assistant" appears only in the merchant's Theme Editor embed list |
 | **5.1.5** Collected customer data returned to the merchant's admin | met | Conversations page (`list_tenant_conversations`, open handoffs) |
 | **Protected customer data** (Level 1 + Level 2 fields; required before listing, reviewed with the submission) | **draft saved, not approved — owner action below** | Partner Dashboard → API access requests → Protected customer data access: **Draft**, last updated 2026-09-24; reasons: Customer service + App functionality; fields: Name, Email, Address; data protection details 16/16. The scopes are all used: `read_customers` + `read_orders` + `read_fulfillments` (a signed-in shopper's own order status/tracking via `customer(id).orders`), `write_orders` (cancel, update shipping address, refund, draft order — each confirm-gated), `read_returns` + `write_returns` (start a return). Level 2 fields actually touched: **Name, Address and Phone** (only `update_shipping_address` writes them, from the shopper's own input — its address input carries `phone`, which is Shopify's separate Level 2 **Phone** field, `app/mcp/tools/returns.ts`); **no tool reads or writes Email**. The `orders/*` KB webhook stays disabled until approval (`shopify.app.toml`). Reducing scopes would remove the order-aware support the listing describes, so the approval path is the right one |
 | **1.1.1** Works without third-party cookies or local storage (incognito Chrome) | met | App Bridge session tokens + token exchange (`@shopify/shopify-app-react-router` 2.1.0, `distribution: AppStore`); server sessions in Prisma, encrypted at rest |
@@ -106,12 +154,12 @@ apply to this app are listed; the numbers are Shopify's.
 | **1.2.1 / 1.2.2 / 1.2.3** Shopify App Pricing; accept/decline/re-request on reinstall; up/downgrade in-app | met (09-13) | Billing → Shopify's hosted pricing page; `app_subscriptions/update` sync |
 | **3.1.1** Valid TLS | met | `store.busymate.ai`, `busymate.ai` |
 | **3.2.x** Special scopes (`read_all_orders`, payment mandate, checkout chat, …) | n/a | none requested |
-| **4.5.3** A screencast of onboarding and features | **to do (owner)** | record a NEW screencast after steps 1–8 pass (below) |
+| **4.5.3** A screencast of onboarding and features | **candidate recorded; link in the submission is the owner's** | [`screencast-5.1.2-reviewer-flow.mp4`](5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4) (frame sequence of the live run). A continuous screen recording of the same flow is optional (below) |
 | **4.5.4 / 4.5.5** Credentials in the testing instructions | met | none required ("no account required" set); update the instructions text (below) |
 | **4.5.6** Emergency developer contact | check | Partner Dashboard → Settings (confirm it is set) |
 | **4.1.x / 4.2.x / 4.3.x / 4.4.x** Listing name, pricing placement, truthful copy, assets | met | `test/listing-copy.test.ts` ×14 locales, drift-checked against the canonical store record |
-| Mandatory GDPR webhooks | met | `compliance_topics`; `customers/data_request`, `customers/redact`, `shop/redact` handlers, HMAC-verified |
-| `app/uninstalled`, `app/scopes_update`, `domains/*` | met (`domains/*` on the next deploy) | suspend + session purge; reinstall reactivates the tenant; a domain change repairs the allowlist |
+| Mandatory GDPR webhooks | **met only while the shop's offline token is fresh; fix pending deploy** | `compliance_topics`; `customers/data_request`, `customers/redact`, `shop/redact` handlers, HMAC-verified. They answer 500 when a session with an expired offline token still exists (busymate-devtools#3731); fixed in [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43) (0.1.13), not yet on the host |
+| `app/uninstalled`, `app/scopes_update`, `domains/*` | **`app/uninstalled`: same as above**; others met (`domains/*` on the next deploy) | suspend + session purge (200 on 2026-09-25 at 02:13 and 02:26, fresh token; 500 on an expired one, #3731); reinstall reactivates the tenant (step 5); a domain change repairs the allowlist |
 | Current Admin API version; expiring offline tokens | met | `2026-07`; `future.expiringOfflineAccessTokens: true`; no re-publish on re-exchange (0.1.12) |
 | Privacy policy + FAQ URLs | met | `https://store.busymate.ai/legal/privacy`, `/legal/faq` |
 | Storefront performance | met | the loader is deferred, its bytes budgeted (71,769 raw / 23,819 gz), no fetch at mount |
@@ -119,20 +167,35 @@ apply to this app are listed; the numbers are Shopify's.
 
 ## Before resubmitting (owner)
 
-- [ ] Platform half shipped (busymate-devtools `fix/shopify-512`, ai build ≥ 937), **including
+- [x] Platform half shipped (busymate-devtools `fix/shopify-512`, ai build ≥ 937), **including
       its busymate-ai Edge leg** (`support-launch` redeployed), and steps 1–2 pass.
-- [ ] App 0.1.12 deployed to `store.busymate.ai` (SETUP §3b) — `/api/bmai/status` ok,
+      *Verified 2026-09-25: `/api/version` build 937; steps 1–2 and the `support-launch`
+      probe pass (live run, steps 1–2).*
+- [x] App 0.1.12 deployed to `store.busymate.ai` (SETUP §3b) — `/api/bmai/status` ok,
       a request line in the journal shows `id_token=REDACTED`.
-- [ ] `npm run tenants:reconcile` (dry-run) reviewed — the demo store reads `orphaned`;
+      *Verified 2026-09-25: host at `0bc639c`, `package.json` 0.1.12, `/api/bmai/status`
+      `ok:true`; last 2 h of the journal: 9 `id_token=REDACTED` lines, 0 raw `id_token=eyJ`.*
+- [x] `npm run tenants:reconcile` (dry-run) reviewed — the demo store reads `orphaned`;
       `--apply` run for our own dev stores only.
-- [ ] Steps 3–8 pass; screenshots P01–P08 filed on #3718.
+      *Reviewed 2026-09-25 01:59: the demo store already reads `live` (repaired at 01:51,
+      right after the deploy), so no `--apply` was needed. `busymate-ai-review-test`, `-2`, `-3`
+      and `-4` read `orphaned` / `reprovision`. They are not applied because that would recreate
+      tenants on dormant stores; the owner decides.*
+- [x] Steps 3–8 pass; screenshots P01–P08 filed on #3718.
+      *2026-09-25 live run, above; the evidence comment is on #3718.*
+- [ ] **#3731 fix deployed**: [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43)
+      (0.1.13) merged and deployed to the host, so `app/uninstalled` and the GDPR topics answer
+      200 even when the offline token has expired. Recommended before resubmitting: the Dev
+      Dashboard's webhook failure rate is visible to reviewers.
 - [ ] **App version decision (one decision, not two).** `shopify app deploy` versions the app
       config together with the extensions: the same new version that activates the `domains/*`
       webhook subscriptions also releases this branch's `assistant.js` hardening. So either
       deploy both (needs the Shopify CLI + `shopify app config link`; required if step 6 ever
       shows the toggle on and saved with no launcher), or deploy neither and accept that a
       custom domain connected after install is repaired only on the next admin open or
-      `tenants:reconcile`, not by webhook.
+      `tenants:reconcile`, not by webhook. *The 2026-09-25 run did not hit "on and saved, no
+      launcher" (step 6 passed with `busymate-ai-5`), so 5.1.2 does not force the extension
+      release. The `domains/*` webhooks remain the reason to decide.*
 - [ ] **Protected customer data.** Open the draft (Partner Dashboard → API access requests →
       Protected customer data access → Manage): keep Protected customer data (Customer
       service, App functionality), Name and Address (Customer service); **add Phone** (Customer
@@ -144,8 +207,14 @@ apply to this app are listed; the numbers are Shopify's.
       "Ask us" answers in the Theme Editor → the storefront as an anonymous shopper → close and
       reopen, the embed still on and the launcher showing → uninstall + reinstall → it still
       works. Replace the screencast link in the submission.
+      *Candidate ready: [`screencast-5.1.2-reviewer-flow.mp4`](5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4)
+      covers this flow on 2026-09-25. It is a captioned frame sequence of the live run, so
+      record a continuous screen recording instead if you prefer one. Uploading it and replacing
+      the link in the submission stays with you.*
 - [ ] Testing instructions updated: step 2 must read "click **Save** in the theme editor (the
       embed stays on only after Save)"; add "Turn on the storefront assistant becomes available
       once your assistant can be shown (usually under a minute); the page checks by itself";
-      add the 5.1.2 fix line.
+      add the 5.1.2 fix line. *The text in [`testing-instructions.md`](testing-instructions.md)
+      already has all three. Pasting it into the Partner Dashboard is still to do. Consider
+      adding "click Refresh status if Home still says Provisioning" to its step 1.*
 - [ ] Owner's explicit go → Partner Dashboard → resubmit (not before 2026-10-08).
