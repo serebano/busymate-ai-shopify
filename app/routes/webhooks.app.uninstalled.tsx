@@ -1,8 +1,11 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate, onAppUninstalled } from "../shopify.server";
+import { onAppUninstalled } from "../shopify.server";
+import { authenticateWebhookWithoutSession } from "../lib/webhookAuth";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic } = await authenticate.webhook(request);
+  // HMAC only, no offline-session load: the library would first refresh an expired
+  // offline token, which fails once the app is uninstalled and answered 500 (#3731).
+  const { shop, topic } = await authenticateWebhookWithoutSession(request);
   console.log(`Received ${topic} for ${shop}`);
   // Suspend/teardown the tenant + purge sessions (do NOT hard-delete on uninstall;
   // shop/redact 48h later does the full purge).
