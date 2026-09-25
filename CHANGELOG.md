@@ -4,7 +4,10 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
-## 2026-09-25 — 0.1.13 (host deploy pending): uninstall and GDPR webhooks no longer answer 500 after the offline token expires (busymate-devtools#3731)
+## 2026-09-25 — 0.1.13: uninstall and GDPR webhooks no longer answer 500 after the offline token expires (busymate-devtools#3731)
+
+Commit `50d3c6a` on `main`; host deployed 2026-09-25 03:53 UTC (SETUP §3b). No Shopify app
+version was released: the change is server-side only.
 
 Found during the 5.1.2 live acceptance run: the Dev Dashboard showed a 51.4 % webhook
 failure rate. `authenticate.webhook` refreshes an expired offline token before it returns,
