@@ -22,16 +22,23 @@ busymate-devtools (`fix/shopify-512`). This app half:
     ("administration denied" / "unavailable") → a first-class `orphaned` readiness state
     (`app/lib/runtimeReadiness.ts`); no meter flag needed. Home repairs it on load too;
   - **storefront domain missing** — the store has a domain its published allowlist lacks.
+  A successful publish clears the meter's `tenantUnreachableAt`, so a repaired tenant is not
+  re-repaired every 10 min until the next hourly meter run.
 - **`domains/create|update|destroy` webhooks** (`app/routes/webhooks.domains.tsx`, no
-  scope needed; active on the next `shopify app deploy`) re-read the store's domains and
-  repair the allowlist when one is missing.
+  scope needed; active on the next `shopify app deploy`, which also releases the
+  `assistant.js` hardening below — one decision) re-read the store's domains and repair the
+  allowlist when one is missing.
 - **Home's "Turn on the storefront assistant"**: the platform's frameability answer
   (`/api/embed-status`, Online Store + Theme Editor chain) decides whenever it answered —
   `true` enables the CTA even while the readiness read is unverified or pending, `false`
   holds it; only an unanswered check falls back to readiness, and "couldn't ask" never
   holds it. While held, Home re-checks every 5 s for 5 min, then every 30 s with a
-  "taking longer" banner and Retry setup — it never stops. The embed step says the embed
-  stays on only after Save.
+  "taking longer" banner and Retry setup — it never stops. One loop runs per hold
+  (`app/lib/activationRecheck.ts` + `useActivationRecheck`): the first version listed
+  react-router's revalidator as an effect dependency, which is a new object on every
+  re-check, so the loop restarted each time and the banner never came
+  (`test/activationRecheck.test.ts` drives the hook in a real data router). The embed step
+  says the embed stays on only after Save.
 - **Embed detector** matches the `assistant.js` asset tag + this store's `data-slug`
   (the hard-coded CDN UUID `01a04ae4…` said "off" for the live `busymate-ai-5` embed).
 - **Storefront domains** (primary + others, Admin API) join the embed-origin allowlist on

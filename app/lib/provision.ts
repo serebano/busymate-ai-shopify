@@ -71,6 +71,13 @@ export type TenantPatch = {
    */
   provisionWarning?: string | null;
   publishedAt?: Date | null;
+  /**
+   * The meter's "the platform denied this tenant" mark. A successful publish
+   * proves the tenant is reachable again, so it is cleared there (#3718): left
+   * set, it kept afterAuth and Home re-repairing a healthy tenant every 10 min
+   * until the next hourly meter run.
+   */
+  tenantUnreachableAt?: Date | null;
 } & Partial<TrainingPatch>;
 
 /**
@@ -395,6 +402,7 @@ export async function runProvisionLifecycle(
     provisionError: null,
     provisionWarning,
     publishedAt: new Date(),
+    tenantUnreachableAt: null,
     ...(training ?? {}),
   });
 

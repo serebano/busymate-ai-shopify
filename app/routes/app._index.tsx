@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useEffect, useState } from "react";
-import { useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import {
   Badge,
   Banner,
@@ -22,7 +21,8 @@ import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
 import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
-import { embedCtaReady, readStorefrontFrameable, recheckDelayMs, recheckIsSlow } from "../lib/embedFrameable";
+import { embedCtaReady, readStorefrontFrameable } from "../lib/embedFrameable";
+import { useActivationRecheck } from "../lib/useActivationRecheck";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
@@ -155,27 +155,9 @@ export default function Index() {
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
   // #3718 — while the CTA is held, re-check by itself: every 5 s for 5 minutes,
-  // then every 30 s for as long as it is still held (never a silent stop).
-  const revalidator = useRevalidator();
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!data.activating) {
-      setSlow(false);
-      return;
-    }
-    let tick = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    const next = () => {
-      timer = setTimeout(() => {
-        tick += 1;
-        setSlow(recheckIsSlow(tick));
-        if (revalidator.state === "idle") revalidator.revalidate();
-        next();
-      }, recheckDelayMs(tick));
-    };
-    next();
-    return () => clearTimeout(timer);
-  }, [data.activating, revalidator]);
+  // then every 30 s for as long as it is still held (never a silent stop), and
+  // switch to the "taking longer" banner with Retry setup after 5 minutes.
+  const slow = useActivationRecheck(data.activating);
   return (
     <Page>
       <TitleBar title="Busymate AI" />

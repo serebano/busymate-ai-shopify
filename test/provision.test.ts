@@ -547,6 +547,9 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect(seen["publish_tenant_runtime"]).toMatchObject({ tenant_id: "t_old", confirm: true });
     expect(seen["publish_tenant_runtime"].knowledge_sources).toEqual(KNOWLEDGE.sources);
     expect(states.at(-1)).toMatchObject({ provisionState: "published", bmaiTenantId: "t_old", provisionError: null, kbProducts: 1 });
+    // #3718 — a successful publish clears the meter's unreachable mark, so a
+    // repaired tenant is not re-repaired every 10 min until the hourly meter run.
+    expect(states.at(-1)).toHaveProperty("tenantUnreachableAt", null);
   });
 
   it("#2132 C — REINSTALL / re-run of an EXISTING tenant NEVER re-seeds the default branding (the merchant's saved names survive)", async () => {
